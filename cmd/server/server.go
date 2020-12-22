@@ -8,8 +8,8 @@ import (
 	"os"
 	"time"
 
-	"github.com/open-cluster-management/clusterset-server/cmd/server/app"
-	"github.com/open-cluster-management/clusterset-server/cmd/server/app/options"
+	"github.com/open-cluster-management/clusterset-server/pkg/cmd"
+	"github.com/open-cluster-management/clusterset-server/pkg/cmd/options"
 	"github.com/spf13/pflag"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/component-base/cli/flag"
@@ -26,7 +26,7 @@ func main() {
 	logs.InitLogs()
 	defer logs.FlushLogs()
 
-	if err := app.Run(opts, wait.NeverStop); err != nil {
+	if err := cmd.Run(opts, wait.NeverStop); err != nil {
 		fmt.Fprintf(os.Stderr, "%v\n", err)
 		os.Exit(1)
 	}
