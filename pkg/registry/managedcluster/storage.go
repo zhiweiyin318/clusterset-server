@@ -75,7 +75,9 @@ func (c *REST) ConvertToTable(ctx context.Context, object runtime.Object, tableO
 	return c.tableConverter.ConvertToTable(ctx, object, tableOptions)
 }
 
-func (s *REST) Watch(ctx context.Context, options *metav1.ListOptions) (watch.Interface, error) {
+var _ = rest.Watcher(&REST{})
+
+func (s *REST) Watch(ctx context.Context, options *metainternalversion.ListOptions) (watch.Interface, error) {
 	if ctx == nil {
 		return nil, fmt.Errorf("Context is nil")
 	}
