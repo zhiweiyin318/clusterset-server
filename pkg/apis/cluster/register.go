@@ -1,6 +1,7 @@
 package cluster
 
 import (
+	metainternalversion "k8s.io/apimachinery/pkg/apis/meta/internalversion"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -25,13 +26,14 @@ var (
 		&metav1.APIGroupList{},
 		&metav1.APIGroup{},
 		&metav1.APIResourceList{},
+		&metav1.Table{},
 	}
 )
 
 func init() {
 	// we need to add the options to empty v1
 	metav1.AddToGroupVersion(Scheme, schema.GroupVersion{Group: "", Version: "v1"})
-
+	metainternalversion.AddToScheme(Scheme)
 	Scheme.AddUnversionedTypes(unversionedVersion, unversionedTypes...)
 
 	Install(Scheme)
