@@ -63,6 +63,7 @@ func NewFilterServer(
 	}
 	apiGroupInfo.VersionedResourcesStorageMap[clusterv1.GroupVersion.Version] = v1storage
 	apiGroupInfo.VersionedResourcesStorageMap[clusterv1alpha1.GroupVersion.Version] = v1alpha1storage
+	apiGroupInfo.PrioritizedVersions = clusterapi.Scheme.PrioritizedVersionsForGroup(clusterapi.GroupName)
 	if err := apiServer.InstallAPIGroup(&apiGroupInfo); err != nil {
 		return nil, err
 	}
