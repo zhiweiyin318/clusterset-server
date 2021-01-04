@@ -47,7 +47,7 @@ func Run(s *options.Options, stopCh <-chan struct{}) error {
 		return err
 	}
 
-	proxyServer, err := NewFilterServer(informerFactory, clusterInformers, apiServerConfig)
+	proxyServer, err := NewFilterServer(clusterClient, informerFactory, clusterInformers, apiServerConfig)
 	if err != nil {
 		return err
 	}

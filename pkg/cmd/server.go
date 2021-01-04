@@ -3,10 +3,15 @@
 package cmd
 
 import (
+	clusterv1client "github.com/open-cluster-management/api/client/cluster/clientset/versioned"
 	clusterv1informers "github.com/open-cluster-management/api/client/cluster/informers/externalversions"
 	clusterv1 "github.com/open-cluster-management/api/cluster/v1"
 	clusterv1alpha1 "github.com/open-cluster-management/api/cluster/v1alpha1"
 	clusterapi "github.com/open-cluster-management/clusterset-server/pkg/apis/cluster"
+	"github.com/open-cluster-management/clusterset-server/pkg/cache"
+	"github.com/open-cluster-management/clusterset-server/pkg/cache/rbac"
+	clusterregistry "github.com/open-cluster-management/clusterset-server/pkg/registry/managedcluster"
+	clustersetregistry "github.com/open-cluster-management/clusterset-server/pkg/registry/managedclusterset"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apiserver/pkg/registry/rest"
@@ -19,6 +24,7 @@ type FilterServer struct {
 }
 
 func NewFilterServer(
+	client clusterv1client.Interface,
 	informerFactory informers.SharedInformerFactory,
 	clusterInformer clusterv1informers.SharedInformerFactory,
 	apiServerConfig *genericapiserver.Config,
@@ -28,9 +34,33 @@ func NewFilterServer(
 		return nil, err
 	}
 
+	reviewer := rbac.NewReviewer(rbac.NewSubjectAccessEvaluator(
+		informerFactory.Rbac().V1().ClusterRoles().Lister(),
+		informerFactory.Rbac().V1().ClusterRoleBindings().Lister(),
+		"cluster-amdin",
+	))
+
+	clusterCache := cache.NewClusterCache(
+		reviewer,
+		clusterInformer.Cluster().V1().ManagedClusters(),
+		informerFactory.Rbac().V1().ClusterRoles(),
+		informerFactory.Rbac().V1().ClusterRoleBindings(),
+	)
+
+	clustersetCache := cache.NewClusterSetCache(
+		reviewer,
+		clusterInformer.Cluster().V1alpha1().ManagedClusterSets(),
+		informerFactory.Rbac().V1().ClusterRoles(),
+		informerFactory.Rbac().V1().ClusterRoleBindings(),
+	)
+
 	apiGroupInfo := genericapiserver.NewDefaultAPIGroupInfo(clusterapi.GroupName, clusterapi.Scheme, metav1.ParameterCodec, clusterapi.Codecs)
-	v1storage := map[string]rest.Storage{}
-	v1alpha1storage := map[string]rest.Storage{}
+	v1storage := map[string]rest.Storage{
+		"managedclusters": clusterregistry.NewREST(client, clusterCache, clusterCache, clusterInformer.Cluster().V1().ManagedClusters().Lister()),
+	}
+	v1alpha1storage := map[string]rest.Storage{
+		"managedclustersets": clustersetregistry.NewREST(client, clustersetCache, clustersetCache, clusterInformer.Cluster().V1alpha1().ManagedClusterSets().Lister()),
+	}
 	apiGroupInfo.VersionedResourcesStorageMap[clusterv1.GroupVersion.Version] = v1storage
 	apiGroupInfo.VersionedResourcesStorageMap[clusterv1alpha1.GroupVersion.Version] = v1alpha1storage
 	if err := apiServer.InstallAPIGroup(&apiGroupInfo); err != nil {
