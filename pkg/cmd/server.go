@@ -3,6 +3,8 @@
 package cmd
 
 import (
+	"time"
+
 	clusterv1client "github.com/open-cluster-management/api/client/cluster/clientset/versioned"
 	clusterv1informers "github.com/open-cluster-management/api/client/cluster/informers/externalversions"
 	clusterv1 "github.com/open-cluster-management/api/cluster/v1"
@@ -71,6 +73,12 @@ func NewFilterServer(
 	apiServer.AddPostStartHook("start-informers", func(context genericapiserver.PostStartHookContext) error {
 		informerFactory.Start(context.StopCh)
 		clusterInformer.Start(context.StopCh)
+		return nil
+	})
+
+	apiServer.AddPostStartHook("start-cache", func(context genericapiserver.PostStartHookContext) error {
+		go clusterCache.Run(1 * time.Second)
+		go clustersetCache.Run(1 * time.Second)
 		return nil
 	})
 
