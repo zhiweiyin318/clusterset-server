@@ -11,7 +11,6 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/sets"
-	"k8s.io/apiserver/pkg/authentication/serviceaccount"
 	"k8s.io/apiserver/pkg/authentication/user"
 	rbacv1informers "k8s.io/client-go/informers/rbac/v1"
 	rbacv1listers "k8s.io/client-go/listers/rbac/v1"
@@ -93,13 +92,41 @@ func (rs *statelessSkipSynchronizer) SkipSynchronize(prevState string, versioned
 	return skip, currentState
 }
 
+type SyncedClusterRoleLister interface {
+	rbacv1listers.ClusterRoleLister
+	LastSyncResourceVersioner
+}
+
+type SyncedClusterRoleBindingLister interface {
+	rbacv1listers.ClusterRoleBindingLister
+	LastSyncResourceVersioner
+}
+
+type syncedClusterRoleLister struct {
+	rbacv1listers.ClusterRoleLister
+	versioner LastSyncResourceVersioner
+}
+
+func (l syncedClusterRoleLister) LastSyncResourceVersion() string {
+	return l.versioner.LastSyncResourceVersion()
+}
+
+type syncedClusterRoleBindingLister struct {
+	rbacv1listers.ClusterRoleBindingLister
+	versioner LastSyncResourceVersioner
+}
+
+func (l syncedClusterRoleBindingLister) LastSyncResourceVersion() string {
+	return l.versioner.LastSyncResourceVersion()
+}
+
 type AuthCache struct {
 	// allKnownNames we track all the known resource names, so we can detect deletes.
 	// TODO remove this in favor of a list/watch mechanism for projects
 	allKnownNames sets.String
 
-	clusterroleLister        rbacv1listers.ClusterRoleLister
-	clusterrolebindingLister rbacv1listers.ClusterRoleBindingLister
+	clusterroleLister        SyncedClusterRoleLister
+	clusterrolebindingLister SyncedClusterRoleBindingLister
 
 	lastSyncResourceVersioner       LastSyncResourceVersioner
 	policyLastSyncResourceVersioner LastSyncResourceVersioner
@@ -130,12 +157,20 @@ func NewAutchCache(reviewer rbac.Reviewer,
 	lastSyncResourceVersioner LastSyncResourceVersioner,
 	syncRequestFunc func() ([]*reviewRequest, error),
 ) *AuthCache {
+	scrLister := syncedClusterRoleLister{
+		clusterroleInformer.Lister(),
+		clusterroleInformer.Informer(),
+	}
+	scrbLister := syncedClusterRoleBindingLister{
+		clusterrolebindingInformer.Lister(),
+		clusterrolebindingInformer.Informer(),
+	}
 	result := &AuthCache{
-		clusterroleLister:               clusterroleInformer.Lister(),
-		clusterrolebindingLister:        clusterrolebindingInformer.Lister(),
+		clusterroleLister:               scrLister,
+		clusterrolebindingLister:        scrbLister,
 		syncRequests:                    syncRequestFunc,
 		lastSyncResourceVersioner:       lastSyncResourceVersioner,
-		policyLastSyncResourceVersioner: unionLastSyncResourceVersioner{clusterroleInformer.Informer(), clusterrolebindingInformer.Informer()},
+		policyLastSyncResourceVersioner: unionLastSyncResourceVersioner{scrLister, scrbLister},
 
 		reviewer: reviewer,
 		group:    group,
@@ -149,6 +184,8 @@ func NewAutchCache(reviewer rbac.Reviewer,
 		groupSubjectRecordStore: cache.NewStore(subjectRecordKeyFn),
 
 		skip: &statelessSkipSynchronizer{},
+
+		watchers: []CacheWatcher{},
 	}
 
 	return result
@@ -184,48 +221,26 @@ func (ac *AuthCache) syncRequest(request *reviewRequest, userSubjectRecordStore 
 	}
 
 	name := request.name
-	subjects, err := ac.reviewer.Review(ac.group, ac.resource, name)
+	review, err := ac.reviewer.Review(ac.group, ac.resource, name)
 	if err != nil {
 		return err
-	}
-
-	users := []string{}
-	groups := []string{}
-	for _, subject := range subjects {
-		switch subject.Kind {
-		case rbacv1.UserKind:
-			users = append(users, subject.Name)
-
-		case rbacv1.GroupKind:
-			groups = append(groups, subject.Name)
-
-		case rbacv1.ServiceAccountKind:
-			saNamespace := subject.Namespace
-			if len(saNamespace) == 0 {
-				continue
-			}
-
-			users = append(users, serviceaccount.MakeUsername(saNamespace, subject.Name))
-		default:
-			continue
-		}
 	}
 
 	usersToRemove := sets.NewString()
 	groupsToRemove := sets.NewString()
 	if lastKnownValue != nil {
 		usersToRemove.Insert(lastKnownValue.users...)
-		usersToRemove.Delete(users...)
+		usersToRemove.Delete(review.Users()...)
 		groupsToRemove.Insert(lastKnownValue.groups...)
-		groupsToRemove.Delete(groups...)
+		groupsToRemove.Delete(review.Groups()...)
 	}
 
 	deleteResourceFromSubjects(userSubjectRecordStore, usersToRemove.List(), name)
 	deleteResourceFromSubjects(groupSubjectRecordStore, groupsToRemove.List(), name)
-	addSubjectsToNamespace(userSubjectRecordStore, users, name)
-	addSubjectsToNamespace(groupSubjectRecordStore, groups, name)
-	cacheReviewRecord(request, lastKnownValue, users, groups, reviewRecordStore)
-	ac.notifyWatchers(name, lastKnownValue, sets.NewString(users...), sets.NewString(groups...))
+	addSubjectsToNamespace(userSubjectRecordStore, review.Users(), name)
+	addSubjectsToNamespace(groupSubjectRecordStore, review.Groups(), name)
+	cacheReviewRecord(request, lastKnownValue, review, reviewRecordStore)
+	ac.notifyWatchers(name, lastKnownValue, sets.NewString(review.Users()...), sets.NewString(review.Groups()...))
 	return nil
 }
 
@@ -354,11 +369,11 @@ func (ac *AuthCache) notifyWatchers(name string, exists *reviewRecord, users, gr
 }
 
 // cacheReviewRecord updates the cache based on the request processed
-func cacheReviewRecord(request *reviewRequest, lastKnownValue *reviewRecord, users, groups []string, reviewRecordStore cache.Store) {
+func cacheReviewRecord(request *reviewRequest, lastKnownValue *reviewRecord, review rbac.Review, reviewRecordStore cache.Store) {
 	reviewRecord := &reviewRecord{
 		reviewRequest: &reviewRequest{name: request.name, roleUIDToResourceVersion: map[types.UID]string{}, roleBindingUIDToResourceVersion: map[types.UID]string{}},
-		groups:        groups,
-		users:         users,
+		groups:        review.Groups(),
+		users:         review.Users(),
 	}
 	// keep what we last believe we knew by default
 	if lastKnownValue != nil {

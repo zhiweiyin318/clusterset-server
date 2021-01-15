@@ -20,7 +20,7 @@ import (
 // ClusterSetLister enforces ability to enumerate clusterset based on role
 type ClusterSetLister interface {
 	// List returns the list of ManagedClusterr items that the user can access
-	List(user user.Info) (*clusterv1alpha1.ManagedClusterSetList, error)
+	List(user user.Info, selector labels.Selector) (*clusterv1alpha1.ManagedClusterSetList, error)
 }
 
 type ClusterSetCache struct {
@@ -64,7 +64,7 @@ func (c *ClusterSetCache) ListResources() ([]*reviewRequest, error) {
 	return reqs, nil
 }
 
-func (c *ClusterSetCache) List(userInfo user.Info) (*clusterv1alpha1.ManagedClusterSetList, error) {
+func (c *ClusterSetCache) List(userInfo user.Info, selector labels.Selector) (*clusterv1alpha1.ManagedClusterSetList, error) {
 	names := c.cache.listNames(userInfo)
 
 	clustersetList := &clusterv1alpha1.ManagedClusterSetList{}
@@ -76,13 +76,17 @@ func (c *ClusterSetCache) List(userInfo user.Info) (*clusterv1alpha1.ManagedClus
 		if err != nil {
 			return nil, err
 		}
+
+		if !selector.Matches(labels.Set(clusterset.Labels)) {
+			continue
+		}
 		clustersetList.Items = append(clustersetList.Items, *clusterset)
 	}
 	return clustersetList, nil
 }
 
 func (c *ClusterSetCache) ListObjects(userInfo user.Info) (runtime.Object, error) {
-	return c.List(userInfo)
+	return c.List(userInfo, labels.Everything())
 }
 
 func (c *ClusterSetCache) Get(name string) (runtime.Object, error) {

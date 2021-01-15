@@ -58,10 +58,18 @@ func NewFilterServer(
 
 	apiGroupInfo := genericapiserver.NewDefaultAPIGroupInfo(clusterapi.GroupName, clusterapi.Scheme, metav1.ParameterCodec, clusterapi.Codecs)
 	v1storage := map[string]rest.Storage{
-		"managedclusters": clusterregistry.NewREST(client, clusterCache, clusterCache, clusterInformer.Cluster().V1().ManagedClusters().Lister()),
+		"managedclusters": clusterregistry.NewREST(
+			client, clusterCache, clusterCache,
+			clusterInformer.Cluster().V1().ManagedClusters().Lister(),
+			informerFactory.Rbac().V1().ClusterRoles().Lister(),
+		),
 	}
 	v1alpha1storage := map[string]rest.Storage{
-		"managedclustersets": clustersetregistry.NewREST(client, clustersetCache, clustersetCache, clusterInformer.Cluster().V1alpha1().ManagedClusterSets().Lister()),
+		"managedclustersets": clustersetregistry.NewREST(
+			client, clustersetCache, clustersetCache,
+			clusterInformer.Cluster().V1alpha1().ManagedClusterSets().Lister(),
+			informerFactory.Rbac().V1().ClusterRoles().Lister(),
+		),
 	}
 	apiGroupInfo.VersionedResourcesStorageMap[clusterv1.GroupVersion.Version] = v1storage
 	apiGroupInfo.VersionedResourcesStorageMap[clusterv1alpha1.GroupVersion.Version] = v1alpha1storage

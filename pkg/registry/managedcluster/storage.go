@@ -7,15 +7,18 @@ import (
 	clientset "github.com/open-cluster-management/api/client/cluster/clientset/versioned"
 	clusterv1lister "github.com/open-cluster-management/api/client/cluster/listers/cluster/v1"
 	clusterv1 "github.com/open-cluster-management/api/cluster/v1"
+	"github.com/open-cluster-management/clusterset-server/pkg/apis/helpers"
 	"github.com/open-cluster-management/clusterset-server/pkg/cache"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metainternalversion "k8s.io/apimachinery/pkg/apis/meta/internalversion"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/apiserver/pkg/endpoints/request"
 	"k8s.io/apiserver/pkg/registry/rest"
+	rbaclisters "k8s.io/client-go/listers/rbac/v1"
 )
 
 type REST struct {
@@ -24,20 +27,28 @@ type REST struct {
 	// lister can enumerate project lists that enforce policy
 	lister cache.ClusterLister
 
-	clusterCache   *cache.ClusterCache
-	clusterLister  clusterv1lister.ManagedClusterLister
-	tableConverter rest.TableConvertor
+	clusterCache      *cache.ClusterCache
+	clusterLister     clusterv1lister.ManagedClusterLister
+	clusterRoleLister rbaclisters.ClusterRoleLister
+	tableConverter    rest.TableConvertor
 }
 
 // NewREST returns a RESTStorage object that will work against Project resources
-func NewREST(client clientset.Interface, lister cache.ClusterLister, clusterCache *cache.ClusterCache, clusterLister clusterv1lister.ManagedClusterLister) *REST {
+func NewREST(
+	client clientset.Interface,
+	lister cache.ClusterLister,
+	clusterCache *cache.ClusterCache,
+	clusterLister clusterv1lister.ManagedClusterLister,
+	clusterRoleLister rbaclisters.ClusterRoleLister,
+) *REST {
 	return &REST{
 		client: client,
 		lister: lister,
 
-		clusterCache:   clusterCache,
-		clusterLister:  clusterLister,
-		tableConverter: rest.NewDefaultTableConvertor(clusterv1.Resource("managedclusters")),
+		clusterCache:      clusterCache,
+		clusterLister:     clusterLister,
+		clusterRoleLister: clusterRoleLister,
+		tableConverter:    rest.NewDefaultTableConvertor(clusterv1.Resource("managedclusters")),
 	}
 }
 
@@ -63,7 +74,8 @@ func (s *REST) List(ctx context.Context, options *metainternalversion.ListOption
 	if !ok {
 		return nil, errors.NewForbidden(clusterv1.Resource("managedclusters"), "", fmt.Errorf("unable to list projects without a user on the context"))
 	}
-	clusterList, err := s.lister.List(user)
+	labelSelector, _ := helpers.InternalListOptionsToSelectors(options)
+	clusterList, err := s.lister.List(user, labelSelector)
 	if err != nil {
 		return nil, err
 	}
@@ -89,7 +101,21 @@ func (s *REST) Watch(ctx context.Context, options *metainternalversion.ListOptio
 	includeAllExistingClusters := (options != nil) && options.ResourceVersion == "0"
 
 	// allowedNamespaces are the namespaces allowed by scopes.  kube has no scopess, see all
-	allowedClusters := sets.NewString("*")
+	allowedClusters := sets.NewString()
+	allowedNamespaces, err := helpers.ScopesToVisibleNamespaces(userInfo.GetExtra()[helpers.ScopesKey], s.clusterRoleLister, true)
+	if err != nil {
+		return nil, err
+	}
+
+	clustersets, err := s.clusterLister.List(labels.Everything())
+	if err != nil {
+		return nil, err
+	}
+	for _, clusterset := range clustersets {
+		if allowedNamespaces.Has(clusterset.Name) {
+			allowedClusters.Insert(clusterset.Name)
+		}
+	}
 
 	watcher := cache.NewCacheWatcher(userInfo, allowedClusters, s.clusterCache, includeAllExistingClusters)
 	s.clusterCache.AddWatcher(watcher)
