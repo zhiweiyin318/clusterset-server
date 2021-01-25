@@ -28,7 +28,7 @@ GO_TEST_PACKAGES :=./pkg/...
 # It will generate target "image-$(1)" for building the image and binding it as a prerequisite to target "images".
 $(call build-image,$(IMAGE),$(IMAGE_REGISTRY)/$(IMAGE),./Dockerfile,.)
 
-deploy:
+deploy-server:
 	kubectl apply -k deploy/
 
 clean-deploy:
