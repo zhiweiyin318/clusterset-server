@@ -1,0 +1,38 @@
+kind: Deployment
+apiVersion: apps/v1
+metadata:
+  name: clusterset-server
+  namespace: open-cluster-management
+  labels:
+    app: clusterset-server
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: clusterset-server
+  template:
+    metadata:
+      labels:
+        app: clusterset-server
+    spec:
+      containers:
+      - name: clusterset-server
+        image: clusterset-server
+        imagePullPolicy: IfNotPresent
+        args:
+          - "/server"
+          - "--cert-dir=/tmp/cert"
+          - "--secure-port=6443"
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            scheme: HTTPS
+            port: 6443
+          initialDelaySeconds: 2
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /healthz
+            scheme: HTTPS
+            port: 6443
+          initialDelaySeconds: 2

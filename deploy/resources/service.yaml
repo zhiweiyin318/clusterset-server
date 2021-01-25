@@ -1,0 +1,13 @@
+kind: Service
+apiVersion: v1
+metadata:
+  name: clusterset-server
+  namespace: open-cluster-management
+spec:
+  selector:
+    app: clusterset-server
+  ports:
+    - name: secure
+      protocol: TCP
+      port: 443
+      targetPort: 6443

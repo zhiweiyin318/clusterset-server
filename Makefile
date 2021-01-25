@@ -10,7 +10,7 @@ include $(addprefix ./vendor/github.com/openshift/build-machinery-go/make/, \
 )
 
 # Image URL to use all building/pushing image targets;
-IMAGE ?= cluster-filter-server
+IMAGE ?= clusterset-server
 IMAGE_REGISTRY ?= quay.io/open-cluster-management
 
 GIT_HOST ?= github.com/open-cluster-management

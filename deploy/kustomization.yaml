@@ -1,0 +1,14 @@
+resources:
+- resources/deployment.yaml
+- resources/apiservice.yaml
+- resources/service.yaml
+- resources/sa.yaml
+- resources/clusterrole.yaml
+- resources/clusterrolebinding.yaml
+
+images:
+- name: clusterset-server
+  newName: quay.io/open-cluster-management/clusterset-server
+  newTag: latest
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
