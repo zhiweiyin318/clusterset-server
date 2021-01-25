@@ -15,6 +15,7 @@ spec:
       labels:
         app: clusterset-server
     spec:
+      serviceAccountName: clusterset-server-sa
       containers:
       - name: clusterset-server
         image: clusterset-server
