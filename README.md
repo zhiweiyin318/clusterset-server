@@ -1,6 +1,6 @@
 # How to deploy
 
-Run `make deploy`
+Run `make deploy-server`
 
 ## Create clusterrole/rolebinding for a user
 
