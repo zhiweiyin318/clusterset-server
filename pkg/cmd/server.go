@@ -86,7 +86,7 @@ func NewFilterServer(
 
 	apiServer.AddPostStartHook("start-cache", func(context genericapiserver.PostStartHookContext) error {
 		go clusterCache.Run(1 * time.Second)
-		go clustersetCache.Run(1 * time.Second)
+	//	go clustersetCache.Run(1 * time.Second)
 		return nil
 	})
 

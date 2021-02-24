@@ -74,6 +74,7 @@ func (s *REST) List(ctx context.Context, options *metainternalversion.ListOption
 	if !ok {
 		return nil, errors.NewForbidden(clusterv1.Resource("managedclusters"), "", fmt.Errorf("unable to list projects without a user on the context"))
 	}
+	fmt.Printf("List user %v \n",user.GetName())
 	labelSelector, _ := helpers.InternalListOptionsToSelectors(options)
 	clusterList, err := s.lister.List(user, labelSelector)
 	if err != nil {

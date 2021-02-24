@@ -19,7 +19,7 @@ spec:
       containers:
       - name: clusterset-server
         image: clusterset-server
-        imagePullPolicy: IfNotPresent
+        imagePullPolicy: Always
         args:
           - "/server"
           - "--cert-dir=/tmp/cert"

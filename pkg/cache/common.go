@@ -2,6 +2,7 @@ package cache
 
 import (
 	"fmt"
+	"k8s.io/klog/v2"
 	"strings"
 	"sync"
 
@@ -88,7 +89,7 @@ func (rs *statelessSkipSynchronizer) SkipSynchronize(prevState string, versioned
 	}
 	currentState = strings.Join(resourceVersions, ",")
 	skip = currentState == prevState
-
+	klog.Infoln("rs SkipSynchronize...",prevState,currentState)
 	return skip, currentState
 }
 
@@ -246,10 +247,12 @@ func (ac *AuthCache) syncRequest(request *reviewRequest, userSubjectRecordStore 
 
 // synchronize runs a a full synchronization over the cache data.  it must be run in a single-writer model, it's not thread-safe by design.
 func (ac *AuthCache) synchronize() {
+	klog.Infoln("AuthCache synchronize....",ac.group," ",ac.resource)
 	// if none of our internal reflectors changed, then we can skip reviewing the cache
 	skip, currentState := ac.skip.SkipSynchronize(ac.lastState, ac.lastSyncResourceVersioner, ac.policyLastSyncResourceVersioner)
 	if skip {
-		return
+		klog.Infoln("AuthCache synchronize skip....",ac.group,ac.resource,ac.lastState, ac.lastSyncResourceVersioner.LastSyncResourceVersion(), ac.policyLastSyncResourceVersioner.LastSyncResourceVersion())
+		// return
 	}
 
 	// by default, we update our current caches and do an incremental change
@@ -270,6 +273,7 @@ func (ac *AuthCache) synchronize() {
 
 // synchronizeRoleBindings synchronizes access over each role binding
 func (ac *AuthCache) synchronizeClusterRoleBindings(userSubjectRecordStore cache.Store, groupSubjectRecordStore cache.Store, reviewRecordStore cache.Store) {
+	klog.Infoln("AuthCache synchronizeClusterRoleBindings....",ac.group," ",ac.resource)
 	roleBindings, err := ac.clusterrolebindingLister.List(labels.Everything())
 	if err != nil {
 		utilruntime.HandleError(err)
@@ -284,12 +288,15 @@ func (ac *AuthCache) synchronizeClusterRoleBindings(userSubjectRecordStore cache
 		if all {
 			resources = ac.allKnownNames
 		}
+		klog.Infoln("AuthCache synchronizeClusterRoleBindings resource...",roleBinding.Name,resources.List())
 		for _, name := range resources.List() {
 			request := &reviewRequest{
 				name:                            name,
 				roleBindingUIDToResourceVersion: map[types.UID]string{roleBinding.UID: roleBinding.ResourceVersion},
 				roleUIDToResourceVersion:        map[types.UID]string{clusterRole.UID: clusterRole.ResourceVersion},
 			}
+			klog.Infoln("AuthCache synchronizeClusterRoleBindings rolebinding....",name,roleBinding.UID,roleBinding.ResourceVersion)
+			klog.Infoln("AuthCache synchronizeClusterRoleBindings role....",name,clusterRole.UID,clusterRole.ResourceVersion)
 			if err := ac.syncRequest(request, userSubjectRecordStore, groupSubjectRecordStore, reviewRecordStore); err != nil {
 				utilruntime.HandleError(fmt.Errorf("error synchronizing: %v", err))
 			}
@@ -319,9 +326,11 @@ func (ac *AuthCache) listNames(userInfo user.Info) sets.String {
 	user := userInfo.GetName()
 	groups := userInfo.GetGroups()
 
+	klog.Infoln("authCache listNames user:",user," group: ",groups)
 	obj, exists, _ := ac.userSubjectRecordStore.GetByKey(user)
 	if exists {
 		subjectRecord := obj.(*subjectRecord)
+		klog.Infoln("authCache user exists: ",subjectRecord)
 		keys.Insert(subjectRecord.names.List()...)
 	}
 
@@ -329,6 +338,7 @@ func (ac *AuthCache) listNames(userInfo user.Info) sets.String {
 		obj, exists, _ := ac.groupSubjectRecordStore.GetByKey(group)
 		if exists {
 			subjectRecord := obj.(*subjectRecord)
+			klog.Infoln("authCache group exists: ",subjectRecord)
 			keys.Insert(subjectRecord.names.List()...)
 		}
 	}
